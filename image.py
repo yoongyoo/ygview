@@ -1,6 +1,6 @@
 from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPointF
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QFont, QColor, QMouseEvent, QWheelEvent
-from PyQt5.QtWidgets import QGraphicsView, QGraphicsPixmapItem, QWidget, QVBoxLayout, QGraphicsScene
+from PyQt5.QtWidgets import QInputDialog, QGraphicsView, QGraphicsPixmapItem, QWidget, QVBoxLayout, QGraphicsScene
 import numpy as np
 import cv2
 import keyboard
@@ -11,6 +11,9 @@ class View(QWidget):
         self.init_ui()
         self.images = []
         self.is_change = False
+        self.current_index = 0  # 현재 선택된 영상의 인덱스
+        self.swap_with_index = None  # 특정 영상과 교체할 때 사용할 인덱스
+        self.swap_with_user_defined = False
 
     def init_ui(self):
         vbox = QVBoxLayout()
@@ -43,6 +46,30 @@ class View(QWidget):
         image.set_image(img)
         image.fitInView()
 
+    def swap_images(self, index1, index2):
+
+        rgb1 = self.images[index1].image_view[0, 0]
+        rgb2 = self.images[index2].image_view[0, 0]
+
+        print("before", rgb1, rgb2)
+
+        if 0 <= index1 < len(self.images) and 0 <= index2 < len(self.images):
+            # 리스트에서 두 영상을 교체
+            print("run swap", index1, index2)
+            self.images[index1], self.images[index2] = self.images[index2], self.images[index1]
+
+            rgb1 = self.images[index1].image_view[0, 0]
+            rgb2 = self.images[index2].image_view[0, 0]
+
+            print("after", rgb1, rgb2)
+            self.update_view()
+
+    def update_view(self):
+        """영상의 위치가 변경된 후 화면을 갱신하는 함수."""
+        for i, image in enumerate(self.images):
+            print("img index", i)
+            image.draw_image()  # 각 이미지의 새로운 위치를 설정
+
     def mouseMoved(self, event):
         for image in self.images:
             image.mouseMoveEventHandler(event)
@@ -62,7 +89,7 @@ class View(QWidget):
 
     def SyncCenter(self):
         if not keyboard.is_pressed("ctrl"):
-            current_img = self.current_image()
+            current_img, current_img_idx = self.current_image()
             if current_img is not None:
                 center = current_img.getCenter()
                 for image in self.images:
@@ -70,14 +97,50 @@ class View(QWidget):
                         image.setCenter(center)
 
     def current_image(self):     
-        for img in self.images:
+        for idx, img in enumerate(self.images):
             if img.underMouse():
-                return img
-        return None
+                return img, idx
+        return None, None
 
     def keyPressEvent(self, event):
         self.SyncCenter()
+
+        if event.key() == Qt.Key_T:
+            self.handle_swap_images()
+        elif event.key() == Qt.Key_R:
+            self.open_swap_dialog()
         QWidget.keyPressEvent(self, event)
+
+    def handle_swap_images(self):
+        current_img, self.current_index = self.current_image()
+        if current_img is not None:
+            if((self.swap_with_user_defined is False) or (self.current_index == self.swap_with_index)):
+                print("automatically next index")
+                self.swap_with_index = (self.current_index + 1) % len(self.images)
+
+            print(self.current_index, self.swap_with_index)
+            self.swap_images(self.current_index, self.swap_with_index)
+
+    def open_swap_dialog(self):
+        """영상 교체를 위한 다이얼로그를 띄우는 함수."""
+        dialog = QInputDialog(self)
+        dialog.setInputMode(QInputDialog.IntInput)
+        dialog.setLabelText("교체할 영상 번호를 입력하세요:")
+        dialog.setIntRange(0, len(self.images) - 1)
+        dialog.setIntValue(self.current_index)
+        if dialog.exec_() == QInputDialog.Accepted:
+            _swap_with_index = dialog.intValue()
+            if _swap_with_index == self.current_index:
+                print("same index with current_index, automatically selected next index")
+                _swap_with_index = (self.current_index + 1) % len(self.images)
+
+            self.swap_with_index = _swap_with_index
+
+            print("swap dialog", self.current_index, self.swap_with_index)
+
+            self.swap_with_user_defined = True
+            # self.swap_images(self.current_index, self.swap_with_index)
+            # self.current_index = self.swap_with_index
 
 class Image(QGraphicsView):
     mouseMoved = pyqtSignal(QMouseEvent)
@@ -114,6 +177,18 @@ class Image(QGraphicsView):
         self.image_view = image
         self.height, self.width, self.pattern = image.shape
         self.draw_image()
+
+    # def swap_images(self, index1, index2):
+    #     """두 영상의 위치를 바꾸고 화면을 갱신하는 함수."""
+    #     if 0 <= index1 < len(self.images) and 0 <= index2 < len(self.images):
+    #         # 리스트에서 두 영상을 교체
+    #         self.images[index1], self.images[index2] = self.images[index2], self.images[index1]
+    #         self.update_view()  # 화면을 갱신
+
+    # def update_view(self):
+    #     """영상의 위치가 변경된 후 화면을 갱신하는 함수."""
+    #     for i, image in enumerate(self.images):
+    #         image.update_position(i)  # 각 이미지의 새로운 위치를 설정
 
     def draw_image(self):
         qImg = QImage(self.image_view.data, self.width, self.height, self.width * self.pattern, QImage.Format_RGB888)
@@ -239,3 +314,6 @@ class Image(QGraphicsView):
     
     def getCenter(self):
         return self.mapToScene(self.rect().center())
+    
+    def update_position(self, index):
+        self.draw_image()

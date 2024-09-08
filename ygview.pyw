@@ -5,7 +5,7 @@ import sys
 import os
 import image
 
-__author__ = "Minkey"
+__author__ = "yoongyoo"
 __version__ = 'v1.0.0'
 
 class Main_window(QMainWindow):
@@ -96,7 +96,7 @@ class Main_window(QMainWindow):
 
     def init_ui(self):
         loadUi('main_window.ui', self)
-        self.setWindowTitle('Minview - ' + __version__)
+        self.setWindowTitle('ImgView - ' + __version__)
         self.setAcceptDrops(True)
 
         # image
@@ -128,7 +128,7 @@ class Main_window(QMainWindow):
 
     def version(self):
         msg = QMessageBox()
-        msg.setWindowTitle('Minview')
+        msg.setWindowTitle('ImgView')
         msg.setText('author : ' + __author__ + '\n' + 
                     'version : ' + __version__)
         msg.exec_()
