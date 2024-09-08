@@ -1,0 +1,241 @@
+from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPointF
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QFont, QColor, QMouseEvent, QWheelEvent
+from PyQt5.QtWidgets import QGraphicsView, QGraphicsPixmapItem, QWidget, QVBoxLayout, QGraphicsScene
+import numpy as np
+import cv2
+import keyboard
+
+class View(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
+        self.images = []
+        self.is_change = False
+
+    def init_ui(self):
+        vbox = QVBoxLayout()
+        self.setLayout(vbox)
+
+    def set_image(self, file_name):
+        if file_name.lower().endswith((".jpg", ".bmp", ".png")):
+            img_array = np.fromfile(file_name, np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        elif file_name.lower().endswith(".raw"):
+            file = open(file_name, 'rb')
+            img = np.fromfile(file, dtype='int16', sep="")
+            width, height = 8192, 6144  # Example dimensions
+            img = img.reshape((height, width))
+            img = img >> 2
+            img = np.uint8(img)
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        else:
+            print("Unsupported format")
+            exit(-1)
+
+        image = Image()
+        image.file_name = file_name
+        image.mouseMoved.connect(self.mouseMoved)
+        image.mousePressed.connect(self.mousePressed)
+        image.mouseReleased.connect(self.mouseReleased)
+        image.wheelPressed.connect(self.wheelPressed)
+        self.images.append(image)
+        image.set_image(img)
+        image.fitInView()
+
+    def mouseMoved(self, event):
+        for image in self.images:
+            image.mouseMoveEventHandler(event)
+
+    def mousePressed(self, event):
+        for image in self.images:
+            image.mousePressEventHandler(event)
+
+    def mouseReleased(self, event):
+        for image in self.images:
+            image.mouseReleaseEventHandler(event)
+
+    def wheelPressed(self, event):
+        for image in self.images:
+            image.wheelEventHandler(event)
+        self.SyncCenter()
+
+    def SyncCenter(self):
+        if not keyboard.is_pressed("ctrl"):
+            current_img = self.current_image()
+            if current_img is not None:
+                center = current_img.getCenter()
+                for image in self.images:
+                    if image is not current_img:
+                        image.setCenter(center)
+
+    def current_image(self):     
+        for img in self.images:
+            if img.underMouse():
+                return img
+        return None
+
+    def keyPressEvent(self, event):
+        self.SyncCenter()
+        QWidget.keyPressEvent(self, event)
+
+class Image(QGraphicsView):
+    mouseMoved = pyqtSignal(QMouseEvent)
+    mousePressed = pyqtSignal(QMouseEvent)
+    mouseReleased = pyqtSignal(QMouseEvent)
+    wheelPressed = pyqtSignal(QWheelEvent)
+
+    def __init__(self):
+        super().__init__()
+        self._empty = True
+        self._scene = QGraphicsScene(self)
+        self._photo = QGraphicsPixmapItem()
+        self._scene.addItem(self._photo)
+
+        self.setScene(self._scene)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFrameShape(QGraphicsView.NoFrame)
+        self.zoom_idx = 0
+
+    def fitInView(self, scale=True):
+        rect = QRectF(self._photo.pixmap().rect())
+        if not rect.isNull():
+            self.setSceneRect(rect)
+            viewrect = self.viewport().rect()
+            scenerect = self.transform().mapRect(rect)
+            ratio = min(viewrect.width() / scenerect.width(), viewrect.height() / scenerect.height())
+            self.scale(ratio, ratio)
+            self.zoom_idx = 0
+
+    def set_image(self, image):
+        self.image_view = image
+        self.height, self.width, self.pattern = image.shape
+        self.draw_image()
+
+    def draw_image(self):
+        qImg = QImage(self.image_view.data, self.width, self.height, self.width * self.pattern, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(qImg)
+
+        if pixmap and not pixmap.isNull():
+            self._empty = False
+            self._photo.setPixmap(pixmap)
+        else:
+            self._empty = True
+            self._photo.setPixmap(QPixmap())
+
+    def paintEvent(self, event):
+        super().paintEvent(event)  # 부모 클래스의 paintEvent 호출
+
+        if self.zoom_idx >= 25:
+            painter = QPainter(self.viewport())
+            if painter.isActive():
+                font = QFont("Arial", 8)  # 적절한 글자 크기로 설정
+                painter.setFont(font)
+                painter.setPen(QColor(255, 0, 0))  # 글씨색을 하얀색으로 설정
+
+                # 현재 보이는 영역의 픽셀 좌표만 계산하여 RGB 값 디스플레이
+                view_rect = self.viewport().rect()
+                scene_rect = self.mapToScene(view_rect).boundingRect()
+
+                # 이미지 좌표를 계산하기 위한 변환
+                transform = self.transform()
+                inverse_transform = transform.inverted()[0]  # 역변환 행렬
+
+                # # View의 영역에서 각 픽셀에 대해 RGB 값을 계산하여 표시
+
+                # print(view_rect)
+                # print(view_rect.height(), view_rect.width())
+                # print(view_rect.left(), view_rect.right(), view_rect.top(), view_rect.bottom())
+
+                y_intv = 0
+                x_intv = 0
+                for y in range(int(scene_rect.top()), int(scene_rect.bottom())):
+                    x_intv = 0
+                    for x in range(int(scene_rect.left()), int(scene_rect.right())):
+                        # 이미지 좌표로 변환
+                        image_point = inverse_transform.map(QPointF(x, y))
+                        draw_x = int(image_point.x() + x_intv) + 20
+                        draw_y = int(image_point.y() + y_intv) + 20
+
+                        rgb = self.image_view[int(y), int(x)]
+                        r, g, b = rgb
+
+                        print(x, y, draw_x, draw_y)
+
+                        # 이미지의 범위를 벗어나지 않는 경우
+                        if 0 <= draw_x < view_rect.width() and 0 <= draw_y < view_rect.height():
+                            # 화면상의 픽셀 중앙에 RGB 값을 표시
+                            painter.drawText(draw_x, draw_y, f"R:{r} G:{g} B:{b}")
+                        
+                        x_intv = x_intv + transform.m11()
+
+                    y_intv = y_intv + transform.m22()
+
+    def wheelEventHandler(self, event):
+        if event.angleDelta().y() > 0:
+            if self.zoom_idx < 27:
+                self.zoom_idx += 1
+                self.scale(5/4, 5/4)
+                self.is_change = True
+            else:
+                self.is_change = False
+        elif event.angleDelta().y() < 0:
+            if self.zoom_idx > 0:
+                self.zoom_idx -= 1
+                self.scale(4/5, 4/5)
+                self.is_change = True
+            else:
+                self.is_change = False
+
+        self.update()  # paintEvent 호출을 위해 업데이트
+
+    def wheelEvent(self, event):
+        if keyboard.is_pressed("ctrl"):
+            self.wheelEventHandler(event)
+        else:
+            self.wheelPressed.emit(event)
+
+    def mouseMoveEventHandler(self, event):
+        QGraphicsView.mouseMoveEvent(self, event)
+        self.update()  # 마우스 이동 시 화면 업데이트
+
+    def mouseMoveEvent(self, event):
+        if keyboard.is_pressed("ctrl"):
+            self.mouseMoveEventHandler(event)
+        else:
+            self.mouseMoved.emit(event)
+        self.update()  # 마우스 이동 시 화면 업데이트
+
+    def mousePressEventHandler(self, event):
+        if event.button() == Qt.LeftButton:
+            self.setDragMode(QGraphicsView.ScrollHandDrag)
+        QGraphicsView.mousePressEvent(self, event)
+
+    def mousePressEvent(self, event):
+        if keyboard.is_pressed("ctrl"):
+            self.mousePressEventHandler(event)
+        else:
+            self.mousePressed.emit(event)
+
+    def mouseReleaseEventHandler(self, event):
+        if event.button() == Qt.LeftButton:
+            self.setDragMode(QGraphicsView.NoDrag)
+        elif event.button() == Qt.RightButton:
+            self.fitInView()
+            self.setDragMode(QGraphicsView.NoDrag)
+        QGraphicsView.mouseReleaseEvent(self, event)
+
+    def mouseReleaseEvent(self, event):
+        if keyboard.is_pressed("ctrl"):
+            self.mouseReleaseEventHandler(event)
+        else:
+            self.mouseReleased.emit(event)
+
+    def setCenter(self, center):
+        self.centerOn(center)
+    
+    def getCenter(self):
+        return self.mapToScene(self.rect().center())
