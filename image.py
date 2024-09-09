@@ -46,23 +46,60 @@ class View(QWidget):
         image.set_image(img)
         image.fitInView()
 
+    # def swap_images(self, index1, index2):
+
+    #     rgb1 = self.images[index1].image_view[0, 0]
+    #     rgb2 = self.images[index2].image_view[0, 0]
+
+    #     print("before", rgb1, rgb2)
+
+    #     if 0 <= index1 < len(self.images) and 0 <= index2 < len(self.images):
+    #         # 리스트에서 두 영상을 교체
+    #         print("run swap", index1, index2)
+
+    #         img1 = self.images[index2].image_view
+    #         img2 = self.images[index1].image_view
+    #         self.images[index1], self.images[index2] = self.images[index2], self.images[index1]
+
+    #         rgb1 = self.images[index1].image_view[0, 0]
+    #         rgb2 = self.images[index2].image_view[0, 0]
+
+    #         self.images[index1].set_image(img1)
+    #         self.images[index2].set_image(img2)
+
+    #         print("after", rgb1, rgb2)
+    #         # self.update_view()
+
+    #         for image in self.images:
+    #             image.draw_image()
+
     def swap_images(self, index1, index2):
-
-        rgb1 = self.images[index1].image_view[0, 0]
-        rgb2 = self.images[index2].image_view[0, 0]
-
-        print("before", rgb1, rgb2)
-
         if 0 <= index1 < len(self.images) and 0 <= index2 < len(self.images):
-            # 리스트에서 두 영상을 교체
-            print("run swap", index1, index2)
+            # 리스트에서 이미지 데이터를 교체
+            # self.images[index1], self.images[index2] = self.images[index2], self.images[index1]
+
+            # 교체된 이미지 데이터를 가져옴
+            img1 = self.images[index1].image_view
+            img2 = self.images[index2].image_view
+
+            # 각 이미지에 새로운 QPixmap을 설정 (화면 갱신을 위해)
+            self.images[index2]._photo.setPixmap(QPixmap.fromImage(self.convert_to_qimage(img1)))
+            self.images[index1]._photo.setPixmap(QPixmap.fromImage(self.convert_to_qimage(img2)))
+
+            # 화면에 즉시 반영되도록 뷰 업데이트
+            self.images[index1].update()
+            self.images[index2].update()
+
             self.images[index1], self.images[index2] = self.images[index2], self.images[index1]
 
-            rgb1 = self.images[index1].image_view[0, 0]
-            rgb2 = self.images[index2].image_view[0, 0]
+    def convert_to_qimage(self, image):
+        """이미지 배열을 QImage로 변환하는 헬퍼 함수."""
+        height, width, pattern = image.shape
+        return QImage(image.data, width, height, width * pattern, QImage.Format_RGB888)
 
-            print("after", rgb1, rgb2)
-            self.update_view()
+            
+
+
 
     def update_view(self):
         """영상의 위치가 변경된 후 화면을 갱신하는 함수."""
@@ -107,7 +144,7 @@ class View(QWidget):
 
         if event.key() == Qt.Key_T:
             self.handle_swap_images()
-        elif event.key() == Qt.Key_R:
+        elif event.key() == Qt.Key_Y:
             self.open_swap_dialog()
         QWidget.keyPressEvent(self, event)
 
