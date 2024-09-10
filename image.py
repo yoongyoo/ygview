@@ -1,5 +1,5 @@
-from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPointF
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QFont, QColor, QMouseEvent, QWheelEvent
+from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QPointF, QSizeF
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QFont, QColor, QMouseEvent, QWheelEvent, QCursor
 from PyQt5.QtWidgets import QInputDialog, QGraphicsView, QGraphicsPixmapItem, QWidget, QVBoxLayout, QGraphicsScene
 import numpy as np
 import cv2
@@ -75,22 +75,31 @@ class View(QWidget):
 
     def swap_images(self, index1, index2):
         if 0 <= index1 < len(self.images) and 0 <= index2 < len(self.images):
-            # 리스트에서 이미지 데이터를 교체
-            # self.images[index1], self.images[index2] = self.images[index2], self.images[index1]
+            pixmap_item1 = self.images[index1]._photo
+            pixmap_item2 = self.images[index2]._photo
 
-            # 교체된 이미지 데이터를 가져옴
+            transform1 = pixmap_item1.transform()
+            transform2 = pixmap_item2.transform()
+            
+            # 이미지 데이터 교체
             img1 = self.images[index1].image_view
             img2 = self.images[index2].image_view
 
-            # 각 이미지에 새로운 QPixmap을 설정 (화면 갱신을 위해)
-            self.images[index2]._photo.setPixmap(QPixmap.fromImage(self.convert_to_qimage(img1)))
-            self.images[index1]._photo.setPixmap(QPixmap.fromImage(self.convert_to_qimage(img2)))
-
-            # 화면에 즉시 반영되도록 뷰 업데이트
-            self.images[index1].update()
-            self.images[index2].update()
-
+            # 리스트에서 이미지 객체 교체
             self.images[index1], self.images[index2] = self.images[index2], self.images[index1]
+
+            # 화면에 새로운 QPixmap 설정
+            self.images[index1]._photo.setPixmap(QPixmap.fromImage(self.convert_to_qimage(img1)))
+            self.images[index2]._photo.setPixmap(QPixmap.fromImage(self.convert_to_qimage(img2)))
+
+            # 변환 상태 복원
+            self.images[index1]._photo.setTransform(transform1)
+            self.images[index2]._photo.setTransform(transform2)
+
+            # 뷰 업데이트
+            self.update()  # 전체 뷰를 업데이트하여 올바른 표시 상태를 유지합니다.
+
+
 
     def convert_to_qimage(self, image):
         """이미지 배열을 QImage로 변환하는 헬퍼 함수."""
@@ -133,10 +142,31 @@ class View(QWidget):
                     if image is not current_img:
                         image.setCenter(center)
 
-    def current_image(self):     
+    # def current_image(self):     
+    #     for idx, img in enumerate(self.images):
+    #         if img.underMouse():
+    #             return img, idx
+    #     return None, None
+
+    def current_image(self):
+    # 전역 마우스 좌표를 현재 뷰의 좌표로 변환
+        mouse_pos = self.mapFromGlobal(QCursor.pos())
+        print("Mouse Position in View:", mouse_pos)
+        
         for idx, img in enumerate(self.images):
-            if img.underMouse():
+            # 이미지의 뷰 좌표에서 장면 좌표로 변환
+            scene_mouse_pos = img.mapToScene(mouse_pos)
+            print("Mouse Position in Scene:", scene_mouse_pos)
+            
+            # 이미지의 장면 좌표에서의 경계(Rect)
+            img_rect = img._photo.sceneBoundingRect()
+            print("Image Bounding Rect:", img_rect)
+            
+            # 장면 좌표에서 경계에 마우스 좌표가 포함되어 있는지 확인
+            if img_rect.contains(scene_mouse_pos):
+                print(f"Mouse is over image {idx}")
                 return img, idx
+        
         return None, None
 
     def keyPressEvent(self, event):
@@ -146,6 +176,9 @@ class View(QWidget):
             self.handle_swap_images()
         elif event.key() == Qt.Key_Y:
             self.open_swap_dialog()
+        elif event.key() == Qt.Key_I:
+            _cur_img, _cur_index = self.current_image()
+            print("sel : ", _cur_index)
         QWidget.keyPressEvent(self, event)
 
     def handle_swap_images(self):
